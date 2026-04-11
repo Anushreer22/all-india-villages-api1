@@ -6,9 +6,12 @@
       "use": "@vercel/node"
     },
     {
-      "src": "frontend/**",
+      "src": "frontend/package.json",
       "use": "@vercel/static-build",
-      "config": { "distDir": "frontend/dist" }
+      "config": {
+        "distDir": "dist",
+        "buildCommand": "cd frontend && npm install && npm run build"
+      }
     }
   ],
   "routes": [
@@ -17,8 +20,11 @@
       "dest": "backend/src/index.js"
     },
     {
+      "handle": "filesystem"
+    },
+    {
       "src": "/(.*)",
-      "dest": "frontend/dist/$1"
+      "dest": "/index.html"
     }
   ]
 }
