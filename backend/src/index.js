@@ -8,18 +8,17 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Public routes
+// Public routes (no API key)
 app.get('/ping', (req, res) => {
   res.json({ message: 'pong', timestamp: new Date() });
 });
 
-// Test API key middleware
+// API Key middleware
 async function apiKeyAuth(req, res, next) {
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) {
@@ -35,14 +34,12 @@ async function apiKeyAuth(req, res, next) {
   next();
 }
 
-// Search endpoint
-app.get('/api/v1/search', apiKeyAuth, async (req, res) => {
+// ✅ Changed: removed '/api' prefix, kept '/v1' for versioning
+app.get('/v1/search', apiKeyAuth, async (req, res) => {
   const { q, limit = 20 } = req.query;
-  
   if (!q || q.length < 2) {
     return res.status(400).json({ error: 'Query must be at least 2 characters' });
   }
-
   try {
     const villages = await prisma.$queryRaw`
       SELECT v.id, v.name as village_name, v.code as village_code,
@@ -54,7 +51,6 @@ app.get('/api/v1/search', apiKeyAuth, async (req, res) => {
       WHERE v.name ILIKE ${'%' + q + '%'}
       LIMIT ${parseInt(limit)}
     `;
-    
     res.json({ success: true, count: villages.length, data: villages });
   } catch (error) {
     console.error('Search error:', error);
@@ -62,8 +58,8 @@ app.get('/api/v1/search', apiKeyAuth, async (req, res) => {
   }
 });
 
-// States endpoint
-app.get('/api/v1/states', apiKeyAuth, async (req, res) => {
+// ✅ Changed: '/v1/states' instead of '/api/v1/states'
+app.get('/v1/states', apiKeyAuth, async (req, res) => {
   try {
     const states = await prisma.state.findMany({
       select: { id: true, code: true, name: true },
@@ -75,9 +71,13 @@ app.get('/api/v1/states', apiKeyAuth, async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-});
+// ✅ Only listen when running locally (not on Vercel)
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`✅ Local server running on http://localhost:${PORT}`);
+  });
+}
 
+// ✅ Required for Vercel serverless function
 module.exports = app;

@@ -6,11 +6,10 @@
       "use": "@vercel/node"
     },
     {
-      "src": "frontend/package.json",
+      "src": "frontend/**",
       "use": "@vercel/static-build",
       "config": {
-        "distDir": "dist",
-        "buildCommand": "cd frontend && npm install && npm run build"
+        "distDir": "frontend/dist"
       }
     }
   ],
