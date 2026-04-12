@@ -2,7 +2,11 @@ const prisma = require('../utils/prisma');
 
 async function apiKeyAuth(req, res, next) {
   try {
-    const apiKey = req.headers['x-api-key'] || req.query.key;
+    // read from header OR query
+    const apiKey =
+      req.headers['x-api-key'] ||
+      req.headers['X-API-KEY'] ||
+      req.query.key;
 
     if (!apiKey) {
       return res.status(401).json({
@@ -28,7 +32,6 @@ async function apiKeyAuth(req, res, next) {
 
   } catch (error) {
     console.error('Auth error:', error);
-
     res.status(500).json({
       error: 'Authentication failed'
     });
