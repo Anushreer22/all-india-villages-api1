@@ -1,73 +1,37 @@
-import axios from "axios";
+const prisma = require('../utils/prisma');
 
-const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  "https://all-india-villages-api1-kesi.vercel.app";
+async function apiKeyAuth(req, res, next) {
+  try {
+    const apiKey =
+      req.headers['x-api-key'] ||
+      req.query.key;
 
-const API_KEY = import.meta.env.VITE_API_KEY || "test123";
-
-const api = axios.create({
-  baseURL: API_BASE,
-  headers: {
-    "x-api-key": API_KEY,
-    "Content-Type": "application/json",
-  },
-  timeout: 10000,
-});
-
-// response interceptor
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response) {
-      console.error("API Error:", error.response.data);
-    } else if (error.request) {
-      console.error("Network Error:", error.message);
-    } else {
-      console.error("Error:", error.message);
+    if (!apiKey) {
+      return res.status(401).json({
+        error: "Missing API Key"
+      });
     }
-    return Promise.reject(error);
+
+    const key = await prisma.apiKey.findFirst({
+      where: {
+        key: apiKey,
+        active: true
+      }
+    });
+
+    if (!key) {
+      return res.status(401).json({
+        error: "Invalid API Key"
+      });
+    }
+
+    req.userId = key.userId;
+    next();
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Auth error" });
   }
-);
+}
 
-// search villages
-export const searchVillages = async (query, limit = 20) => {
-  const response = await api.get(
-    `/v1/search?q=${encodeURIComponent(query)}&limit=${limit}`
-  );
-  return response.data;
-};
-
-// fetch states
-export const fetchStates = async () => {
-  const response = await api.get("/v1/states");
-  return response.data;
-};
-
-// fetch districts by state
-export const fetchDistrictsByState = async (stateId) => {
-  const response = await api.get(`/v1/states/${stateId}/districts`);
-  return response.data;
-};
-
-// fetch subdistricts
-export const fetchSubDistrictsByDistrict = async (districtId) => {
-  const response = await api.get(
-    `/v1/districts/${districtId}/subdistricts`
-  );
-  return response.data;
-};
-
-// fetch villages
-export const fetchVillagesBySubDistrict = async (
-  subDistrictId,
-  page = 1,
-  limit = 20
-) => {
-  const response = await api.get(
-    `/v1/subdistricts/${subDistrictId}/villages?page=${page}&limit=${limit}`
-  );
-  return response.data;
-};
-
-export default api;
+module.exports = { apiKeyAuth };
