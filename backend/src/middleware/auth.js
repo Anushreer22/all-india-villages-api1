@@ -2,7 +2,6 @@ const prisma = require('../utils/prisma');
 
 async function apiKeyAuth(req, res, next) {
   try {
-    // allow header OR query param
     const apiKey = req.headers['x-api-key'] || req.query.key;
 
     if (!apiKey) {
