@@ -1,46 +1,28 @@
 import pandas as pd
-from sqlalchemy import create_engine, text
 import os
 import psycopg2
 from psycopg2.extras import execute_values
 
-# ------------------------------
-# CONFIGURATION
-# ------------------------------
 DATA_FOLDER = "data"
-DB_URL = "postgresql://postgres:Anushree%40123@localhost:5432/village_db"
+DB_URL = os.environ.get("DATABASE_URL")
 
-# ------------------------------
-# CONNECT TO POSTGRESQL
-# ------------------------------
-engine = create_engine(DB_URL)
+if not DB_URL:
+    raise Exception("DATABASE_URL not set")
 
-# ------------------------------
-# READ ALL EXCEL FILES
-# ------------------------------
 print("Reading Excel files...")
 
 files = os.listdir(DATA_FOLDER)
-print("Files found:", files)
-
 all_data = []
 
 for file in files:
-    if file.endswith(".xls") and not file.startswith("._"):
+    if file.endswith(".xls"):
         path = os.path.join(DATA_FOLDER, file)
         print("Reading:", path)
-
         df = pd.read_excel(path, engine="xlrd")
         all_data.append(df)
 
-if len(all_data) == 0:
-    raise Exception("No Excel files found in data folder")
-
 df = pd.concat(all_data, ignore_index=True)
 
-# ------------------------------
-# RENAME COLUMNS
-# ------------------------------
 column_mapping = {
     'MDDS STC': 'state_code',
     'STATE NAME': 'state_name',
@@ -71,128 +53,103 @@ df.dropna(inplace=True)
 
 print(f"Loaded {len(df)} records")
 
-# ------------------------------
-# INSERT STATES
-# ------------------------------
-states = df[['state_code', 'state_name']].drop_duplicates()
+conn = psycopg2.connect(DB_URL)
+cur = conn.cursor()
 
-with engine.begin() as conn:
-    for _, row in states.iterrows():
-        conn.execute(
-            text("""
-                INSERT INTO "State"(code,name)
-                VALUES (:code,:name)
-                ON CONFLICT (code) DO NOTHING
-            """),
-            {"code": str(row.state_code), "name": row.state_name}
-        )
-
+# STATES
+states = df[['state_code','state_name']].drop_duplicates()
+execute_values(
+    cur,
+    '''
+    INSERT INTO "State"(code,name)
+    VALUES %s
+    ON CONFLICT (code) DO NOTHING
+    ''',
+    [(str(r.state_code), r.state_name) for _, r in states.iterrows()]
+)
+conn.commit()
 print("States inserted")
 
-# ------------------------------
-# INSERT DISTRICTS
-# ------------------------------
-districts = df[['district_code', 'district_name', 'state_code']].drop_duplicates()
+# DISTRICTS
+cur.execute('SELECT code,id FROM "State"')
+state_map = dict(cur.fetchall())
 
-with engine.begin() as conn:
-    for _, row in districts.iterrows():
+districts = df[['district_code','district_name','state_code']].drop_duplicates()
 
-        state_id = conn.execute(
-            text('SELECT id FROM "State" WHERE code=:code'),
-            {"code": str(row.state_code)}
-        ).scalar()
+district_data = []
+for _, r in districts.iterrows():
+    sid = state_map.get(str(r.state_code))
+    if sid:
+        district_data.append((str(r.district_code), r.district_name, sid))
 
-        if state_id:
-            conn.execute(
-                text("""
-                    INSERT INTO "District"(code,name,"stateId")
-                    VALUES (:code,:name,:state_id)
-                    ON CONFLICT (code) DO NOTHING
-                """),
-                {
-                    "code": str(row.district_code),
-                    "name": row.district_name,
-                    "state_id": state_id
-                }
-            )
-
+execute_values(
+    cur,
+    '''
+    INSERT INTO "District"(code,name,"stateId")
+    VALUES %s
+    ON CONFLICT (code) DO NOTHING
+    ''',
+    district_data
+)
+conn.commit()
 print("Districts inserted")
 
-# ------------------------------
-# INSERT SUBDISTRICTS
-# ------------------------------
-subdistricts = df[
-    ['subdistrict_code', 'subdistrict_name', 'district_code']
-].drop_duplicates()
+# SUBDISTRICTS
+cur.execute('SELECT code,id FROM "District"')
+district_map = dict(cur.fetchall())
 
-with engine.begin() as conn:
-    for _, row in subdistricts.iterrows():
+sub = df[['subdistrict_code','subdistrict_name','district_code']].drop_duplicates()
 
-        district_id = conn.execute(
-            text('SELECT id FROM "District" WHERE code=:code'),
-            {"code": str(row.district_code)}
-        ).scalar()
+sub_data = []
+for _, r in sub.iterrows():
+    did = district_map.get(str(r.district_code))
+    if did:
+        sub_data.append((str(r.subdistrict_code), r.subdistrict_name, did))
 
-        if district_id:
-            conn.execute(
-                text("""
-                    INSERT INTO "SubDistrict"(code,name,"districtId")
-                    VALUES (:code,:name,:district_id)
-                    ON CONFLICT (code) DO NOTHING
-                """),
-                {
-                    "code": str(row.subdistrict_code),
-                    "name": row.subdistrict_name,
-                    "district_id": district_id
-                }
-            )
-
+execute_values(
+    cur,
+    '''
+    INSERT INTO "SubDistrict"(code,name,"districtId")
+    VALUES %s
+    ON CONFLICT (code) DO NOTHING
+    ''',
+    sub_data
+)
+conn.commit()
 print("SubDistricts inserted")
 
-# ------------------------------
-# INSERT VILLAGES (FAST)
-# ------------------------------
-conn = psycopg2.connect(DB_URL)
-cursor = conn.cursor()
+# build subdistrict map
+cur.execute('SELECT code,id FROM "SubDistrict"')
+sub_map = dict(cur.fetchall())
+
+# VILLAGES
+cur.execute('SELECT code FROM "Village"')
+existing = set(x[0] for x in cur.fetchall())
 
 villages = []
 
-for _, row in df.iterrows():
+for _, r in df.iterrows():
+    code = str(r.village_code)
 
-    cursor.execute(
-        'SELECT id FROM "SubDistrict" WHERE code=%s',
-        (str(row.subdistrict_code),)
-    )
+    if code in existing:
+        continue
 
-    result = cursor.fetchone()
+    sid = sub_map.get(str(r.subdistrict_code))
 
-    if result:
-        villages.append((
-            str(row.village_code),
-            row.village_name,
-            result[0]
-        ))
+    if sid:
+        villages.append((code, r.village_name, sid))
 
-chunk_size = 5000
+chunk = 2000   # smaller chunk avoids crash
 
-for i in range(0, len(villages), chunk_size):
-
-    chunk = villages[i:i + chunk_size]
-
+for i in range(0, len(villages), chunk):
     execute_values(
-        cursor,
+        cur,
         '''
         INSERT INTO "Village"(code,name,"subDistrictId")
         VALUES %s
         ON CONFLICT (code) DO NOTHING
         ''',
-        chunk
+        villages[i:i+chunk]
     )
-
     conn.commit()
-    print(f"Inserted {i+len(chunk)} / {len(villages)}")
-
-cursor.close()
-conn.close()
-
-print("Import completed successfully")
+    print(f"Inserted more: {i+chunk}")
