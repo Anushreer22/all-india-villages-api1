@@ -191,15 +191,3 @@ If this project helps you, please ⭐ the repository on GitHub!
 
 Built with ❤️ by Anushree R
 Making Indian geographical data accessible to everyone
-
-text
-
----
-
-Now commit and push the updated README:
-
-```bash
-cd ~/all-india-villages-api
-git add README.md
-git commit -m "Final README for single submission – all live URLs and docs"
-git push origin main
