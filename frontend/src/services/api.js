@@ -1,37 +1,32 @@
-const prisma = require('../utils/prisma');
+import axios from 'axios';
 
-async function apiKeyAuth(req, res, next) {
-  try {
-    const apiKey =
-      req.headers['x-api-key'] ||
-      req.query.key;
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  'https://all-india-villages-api1.vercel.app';
 
-    if (!apiKey) {
-      return res.status(401).json({
-        error: "Missing API Key"
-      });
-    }
+const API_KEY =
+  import.meta.env.VITE_API_KEY ||
+  'test123';
 
-    const key = await prisma.apiKey.findFirst({
-      where: {
-        key: apiKey,
-        active: true
-      }
-    });
+const api = axios.create({
+  baseURL: API_BASE,
+  headers: {
+    'x-api-key': API_KEY,
+    'Content-Type': 'application/json'
+  },
+  timeout: 10000
+});
 
-    if (!key) {
-      return res.status(401).json({
-        error: "Invalid API Key"
-      });
-    }
+export const searchVillages = async (query, limit = 20) => {
+  const response = await api.get(
+    `/v1/search?q=${encodeURIComponent(query)}&limit=${limit}`
+  );
+  return response.data;
+};
 
-    req.userId = key.userId;
-    next();
+export const fetchStates = async () => {
+  const response = await api.get('/v1/states');
+  return response.data;
+};
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Auth error" });
-  }
-}
-
-module.exports = { apiKeyAuth };
+export default api;
